@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kritikly</title>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        :root {
+            --primary: #00d4ff; 
+            --bg: #080808;
+            --card: #141414;
+            --sidebar: #0d0d0d;
+            --text: #ffffff;
+        }
+
+        body, html { 
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background: var(--bg); color: var(--text); 
+            font-family: 'Lexend', sans-serif; 
+            overflow: hidden;
+        }
+
+        /* --- THE PERFECT CENTERING --- */
+        #auth-overlay {
+            position: fixed; inset: 0;
+            background: var(--bg);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999;
+        }
+
+        .auth-box {
+            background: var(--card); padding: 50px 40px; border-radius: 40px;
+            border: 2px solid var(--primary); text-align: center;
+            width: 100%; max-width: 400px;
+            box-shadow: 0 0 60px rgba(0, 212, 255, 0.15);
+        }
+
+        /* --- APP LAYOUT --- */
+        .app-container { display: flex; width: 100%; height: 100vh; }
+        
+        nav { 
+            width: 260px; background: var(--sidebar); 
+            border-right: 1px solid #222; padding: 40px 20px; 
+            display: flex; flex-direction: column; gap: 10px;
+        }
+
+        main { flex: 1; padding: 60px; overflow-y: auto; }
+
+        .nav-item {
+            padding: 15px 20px; border-radius: 15px; cursor: pointer;
+            font-weight: 600; color: rgba(255,255,255,0.4); transition: 0.2s;
+        }
+        .nav-item.active { background: rgba(0, 212, 255, 0.1); color: var(--primary); }
+
+        /* --- INPUTS & BUTTONS --- */
+        input, select, textarea {
+            width: 100%; padding: 18px; border-radius: 15px; border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.05); color: white; margin-bottom: 15px; 
+            font-family: 'Lexend'; box-sizing: border-box; outline: none;
+        }
+
+        .btn {
+            width: 100%; background: var(--primary); color: #000; border: none; 
+            padding: 18px; border-radius: 20px; font-weight: 800; cursor: pointer;
+            font-family: 'Lexend'; font-size: 1rem;
+        }
+
+        .view { display: none; }
+        .view.active { display: block; }
+        .blur { filter: blur(40px); pointer-events: none; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-overlay">
+        <div class="auth-box">
+            <h1 style="color:var(--primary); font-size: 3rem; margin: 0 0 30px 0;">Kritikly</h1>
+            
+            <button class="btn" style="background:#fff; margin-bottom:15px; display:flex; align-items:center; justify-content:center; gap:10px;" onclick="loginWithGoogle()">
+                <img src="https://www.google.com/favicon.ico" width="18"> Login with Google
+            </button>
+
+            <div style="margin-bottom: 20px; opacity: 0.2;">OR</div>
+
+            <input type="email" id="email" placeholder="Email Address">
+            <input type="password" id="pass" placeholder="Password">
+            <button class="btn" onclick="handleAuth()">Sign In / Sign Up</button>
+            <p id="msg" style="font-size:0.8rem; margin-top:15px; color:var(--primary);"></p>
+        </div>
+    </div>
+
+    <div class="app-container blur" id="bg-app">
+        <nav>
+            <h2 style="color:var(--primary); margin-bottom:40px;">Kritikly</h2>
+            <div class="nav-item active" id="nav-create" onclick="showView('create')">Manual Create</div>
+            <div class="nav-item" id="nav-library" onclick="showView('library')">My Library</div>
+            <div class="nav-item" style="margin-top:auto; color:#ff4444;" onclick="supabaseClient.auth.signOut()">Logout</div>
+        </nav>
+
+        <main>
+            <section id="view-create" class="view active">
+                <h1>Create Category</h1>
+                <input type="text" id="course-name" placeholder="Course (e.g. Science)">
+                <input type="text" id="cat-name" placeholder="Category (e.g. Rocks)">
+                <button class="btn" style="width:auto;" onclick="saveCategory()">Save to Database</button>
+            </section>
+
+            <section id="view-library" class="view">
+                <h1>My Library</h1>
+                <div id="library-list" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                    </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const _URL = "https://cokszxzorjufuhvpkygq.supabase.co";
+        const _KEY = "sb_publishable_pL5yti8dYTLMMNLlS1aLDA_0dy63QVg";
+        const supabaseClient = supabase.createClient(_URL, _KEY);
+
+        // --- AUTH TRACKER ---
+        supabaseClient.auth.onAuthStateChange((event, session) => {
+            if (session) {
+                document.getElementById('auth-overlay').classList.add('hidden');
+                document.getElementById('bg-app').classList.remove('blur');
+                loadLibrary();
+            } else {
+                document.getElementById('auth-overlay').classList.remove('hidden');
+                document.getElementById('bg-app').classList.add('blur');
+            }
+        });
+
+        // --- AUTH ACTIONS ---
+        async function handleAuth() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('pass').value;
+            const msg = document.getElementById('msg');
+            
+            msg.innerText = "Connecting...";
+            const { error: logErr } = await supabaseClient.auth.signInWithPassword({ email, password });
+            
+            if (logErr) {
+                const { error: sigErr } = await supabaseClient.auth.signUp({ email, password });
+                if (sigErr) msg.innerText = sigErr.message;
+                else msg.innerText = "Account created! You are logged in.";
+            }
+        }
+
+        async function loginWithGoogle() {
+            await supabaseClient.auth.signInWithOAuth({
+                provider: 'google',
+                options: { redirectTo: window.location.href }
+            });
+        }
+
+        // --- TAB SWITCHING ---
+        function showView(id) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById('view-' + id).classList.add('active');
+            document.getElementById('nav-' + id).classList.add('active');
+            if(id === 'library') loadLibrary();
+        }
+
+        // --- DATABASE ACTIONS ---
+        async function saveCategory() {
+            const course = document.getElementById('course-name').value;
+            const category = document.getElementById('cat-name').value;
+            const { data: { user } } = await supabaseClient.auth.getUser();
+
+            const { error } = await supabaseClient.from('categories').insert([{ course, category, user_id: user.id }]);
+            
+            if (error) alert(error.message);
+            else {
+                alert("Saved!");
+                document.getElementById('course-name').value = '';
+                document.getElementById('cat-name').value = '';
+            }
+        }
+
+        async function loadLibrary() {
+            const { data, error } = await supabaseClient.from('categories').select('*');
+            const list = document.getElementById('library-list');
+            list.innerHTML = '';
+            if (data) {
+                data.forEach(item => {
+                    list.innerHTML += `
+                        <div style="background:#1a1a1a; padding:25px; border-radius:25px; border:1px solid #333;">
+                            <h3 style="color:var(--primary); margin:0;">${item.course}</h3>
+                            <p style="opacity:0.6;">${item.category}</p>
+                        </div>`;
+                });
+            }
+        }
+    </script>
+</body>
+</html>
